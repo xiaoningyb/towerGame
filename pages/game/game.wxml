@@ -1,0 +1,111 @@
+<view class="page">
+  <view class="hud">
+    <view class="hud-item">
+      <text class="label">金币</text>
+      <text class="value">{{gold}}</text>
+    </view>
+    <view class="hud-item">
+      <text class="label">生命</text>
+      <text class="value">{{lives}}</text>
+    </view>
+    <view class="hud-item">
+      <text class="label">轮次</text>
+      <text class="value">{{wave}}</text>
+    </view>
+    <view class="hud-item">
+      <text class="label">状态</text>
+      <text class="value">{{gameOver ? '结束' : running ? '战斗中' : '待命'}}</text>
+    </view>
+  </view>
+
+  <view class="canvas-shell">
+    <canvas
+      class="battlefield"
+      canvas-id="battlefield"
+      bindtouchstart="onCanvasTap"
+    ></canvas>
+  </view>
+
+  <view class="toolbar">
+    <button
+      wx:for="{{towerList}}"
+      wx:key="id"
+      class="tower-button tower-{{item.id}} {{selectedTowerType === item.id ? 'active' : ''}}"
+      data-type="{{item.id}}"
+      bindtap="chooseTower"
+    >
+      <text class="tower-icon">{{item.icon}}</text>
+      <text class="tower-name">{{item.name}}</text>
+      <text class="tower-cost">{{item.cost}}金</text>
+    </button>
+  </view>
+
+  <view class="actions">
+    <button class="primary" bindtap="startWave" disabled="{{running || gameOver}}">
+      开始第 {{wave + 1}} 轮
+    </button>
+    <button class="secondary" bindtap="rerollMap" disabled="{{running || gameOver}}">
+      随机地图
+    </button>
+  </view>
+
+  <view class="panel">
+    <view wx:if="{{selectedTower}}">
+      <view class="panel-title">{{selectedTower.name}} Lv.{{selectedTower.level}}</view>
+      <view class="panel-text">
+        伤害 {{selectedTower.damage}}，射程 {{selectedTower.range}}，升级费用 {{selectedTower.upgradeCost}}
+      </view>
+      <button class="upgrade" bindtap="upgradeSelected" disabled="{{gold < selectedTower.upgradeCost}}">
+        升级
+      </button>
+    </view>
+    <view wx:else>
+      <view class="panel-title">{{message}}</view>
+      <view class="panel-text">点击空地建塔，点击已有塔查看并升级。路线与可建造格每次随机生成。</view>
+    </view>
+  </view>
+
+  <view wx:if="{{showGameOver}}" class="modal-mask">
+    <view class="game-over-card">
+      <view class="game-over-title">GAME OVER</view>
+      <view class="game-over-subtitle">城门失守，防线结算</view>
+
+      <view class="result-grid">
+        <view class="result-item">
+          <text class="result-label">坚持轮次</text>
+          <text class="result-value">{{gameOverStats.wave}}</text>
+        </view>
+        <view class="result-item">
+          <text class="result-label">完成轮次</text>
+          <text class="result-value">{{gameOverStats.clearedWaves}}</text>
+        </view>
+        <view class="result-item">
+          <text class="result-label">消灭敌人</text>
+          <text class="result-value">{{gameOverStats.kills}}</text>
+        </view>
+        <view class="result-item">
+          <text class="result-label">漏过敌人</text>
+          <text class="result-value">{{gameOverStats.escaped}}</text>
+        </view>
+        <view class="result-item">
+          <text class="result-label">赚取金币</text>
+          <text class="result-value">{{gameOverStats.earnedGold}}</text>
+        </view>
+        <view class="result-item">
+          <text class="result-label">花费金币</text>
+          <text class="result-value">{{gameOverStats.spentGold}}</text>
+        </view>
+        <view class="result-item">
+          <text class="result-label">建造塔数</text>
+          <text class="result-value">{{gameOverStats.towersBuilt}}</text>
+        </view>
+        <view class="result-item">
+          <text class="result-label">剩余金币</text>
+          <text class="result-value">{{gameOverStats.finalGold}}</text>
+        </view>
+      </view>
+
+      <button class="restart" bindtap="restartGame">重新开始</button>
+    </view>
+  </view>
+</view>

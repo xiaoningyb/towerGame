@@ -1,0 +1,13 @@
+{
+  "pages": [
+    "pages/game/game"
+  ],
+  "window": {
+    "navigationBarTitleText": "随机塔防",
+    "navigationBarBackgroundColor": "#18212f",
+    "navigationBarTextStyle": "white",
+    "backgroundColor": "#101723"
+  },
+  "style": "v2",
+  "sitemapLocation": "sitemap.json"
+}

@@ -1,0 +1,62 @@
+{
+  "appid": "wx0180461b4e624800",
+  "compileType": "game",
+  "libVersion": "latest",
+  "projectname": "towerGame",
+  "setting": {
+    "es6": true,
+    "enhance": true,
+    "postcss": true,
+    "minified": true,
+    "compileWorklet": false,
+    "uglifyFileName": false,
+    "uploadWithSourceMap": true,
+    "packNpmManually": false,
+    "packNpmRelationList": [],
+    "minifyWXSS": true,
+    "minifyWXML": true,
+    "localPlugins": false,
+    "disableUseStrict": false,
+    "useCompilerPlugins": false,
+    "condition": false,
+    "swc": false,
+    "disableSWC": true,
+    "babelSetting": {
+      "ignore": [],
+      "disablePlugins": [],
+      "outputPath": ""
+    }
+  },
+  "condition": {},
+  "simulatorPluginLibVersion": {},
+  "packOptions": {
+    "ignore": [
+      {
+        "type": "file",
+        "value": "app.js"
+      },
+      {
+        "type": "file",
+        "value": "app.json"
+      },
+      {
+        "type": "file",
+        "value": "app.wxss"
+      },
+      {
+        "type": "file",
+        "value": "sitemap.json"
+      },
+      {
+        "type": "folder",
+        "value": "pages"
+      },
+      {
+        "type": "file",
+        "value": "README.md"
+      }
+    ],
+    "include": []
+  },
+  "editorSetting": {}
+}
