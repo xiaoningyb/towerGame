@@ -22,24 +22,31 @@ canvas.height = H * DPR
 
 // 四类塔的基础数值。升级会在已建塔实例上继续放大这些属性。
 const towerTypes = {
-  arrow: { id: 'arrow', name: '箭塔', icon: '弓', cost: 45, color: '#f8fafc', range: 4.2, damage: 16, cooldown: 480 },
-  rocket: { id: 'rocket', name: '火箭塔', icon: '炮', cost: 80, color: '#f97316', range: 3.7, damage: 28, cooldown: 1050, splash: 1.4 },
-  barracks: { id: 'barracks', name: '兵营', icon: '营', cost: 65, color: '#22c55e', range: 2.7, damage: 8, cooldown: 820 },
-  magic: { id: 'magic', name: '魔法塔', icon: '法', cost: 70, color: '#a78bfa', range: 4.0, damage: 12, cooldown: 760, slow: 0.48 }
+  arrow: { id: 'arrow', name: '箭塔', icon: '弓', image: 'assets/icons/tower_arrow.png', cost: 45, color: '#f8fafc', range: 4.2, damage: 16, cooldown: 480 },
+  rocket: { id: 'rocket', name: '火箭塔', icon: '炮', image: 'assets/icons/tower_rocket.png', cost: 80, color: '#f97316', range: 3.7, damage: 28, cooldown: 1050, splash: 1.4 },
+  barracks: { id: 'barracks', name: '兵营', icon: '营', image: 'assets/icons/tower_barracks.png', cost: 65, color: '#22c55e', range: 2.7, damage: 8, cooldown: 820 },
+  magic: { id: 'magic', name: '魔法塔', icon: '法', image: 'assets/icons/tower_magic.png', cost: 70, color: '#a78bfa', range: 4.0, damage: 12, cooldown: 760, slow: 0.48 }
 }
 
 const towerList = Object.keys(towerTypes).map((key) => towerTypes[key])
 
 // 普通敌人的差异化配置。hp/speed/reward/attack 是倍率，blockImmune 表示能否无视兵营士兵阻挡。
 const enemyTypes = {
-  grunt: { id: 'grunt', name: '步兵', mark: '', color: '#f43f5e', hp: 1, speed: 1, reward: 1, radius: 1, attack: 1, blockImmune: false },
-  runner: { id: 'runner', name: '疾行兵', mark: 'S', color: '#facc15', hp: 0.62, speed: 1.48, reward: 1, radius: 0.9, attack: 0.82, blockImmune: false },
-  brute: { id: 'brute', name: '重甲兵', mark: 'H', color: '#fb923c', hp: 1.85, speed: 0.68, reward: 1.45, radius: 1.2, attack: 1.38, blockImmune: false },
-  shade: { id: 'shade', name: '幽影兵', mark: 'G', color: '#c084fc', hp: 0.9, speed: 1.08, reward: 1.25, radius: 0.95, attack: 0.9, blockImmune: true },
-  boss: { id: 'boss', name: 'Boss', mark: 'B', color: '#dc2626', hp: 1, speed: 1, reward: 1, radius: 1.55, attack: 1.65, blockImmune: false }
+  grunt: { id: 'grunt', name: '步兵', mark: '', image: 'assets/icons/enemy_grunt.png', color: '#f43f5e', hp: 1, speed: 1, reward: 1, radius: 1, attack: 1, blockImmune: false },
+  runner: { id: 'runner', name: '疾行兵', mark: 'S', image: 'assets/icons/enemy_runner.png', color: '#facc15', hp: 0.62, speed: 1.48, reward: 1, radius: 0.9, attack: 0.82, blockImmune: false },
+  brute: { id: 'brute', name: '重甲兵', mark: 'H', image: 'assets/icons/enemy_brute.png', color: '#fb923c', hp: 1.85, speed: 0.68, reward: 1.45, radius: 1.2, attack: 1.38, blockImmune: false },
+  shade: { id: 'shade', name: '幽影兵', mark: 'G', image: 'assets/icons/enemy_shade.png', color: '#c084fc', hp: 0.9, speed: 1.08, reward: 1.25, radius: 0.95, attack: 0.9, blockImmune: true },
+  boss: { id: 'boss', name: 'Boss', mark: 'B', image: 'assets/icons/enemy_boss.png', color: '#dc2626', hp: 1, speed: 1, reward: 1, radius: 1.55, attack: 1.65, blockImmune: false }
+}
+
+const specialBossTypes = {
+  anna: { id: 'annaBoss', name: 'Anna Boss', mark: 'A', image: 'assets/icons/anna.png', color: '#f472b6', every: 5, radius: 1.75, attack: 1.85, hpScale: 1.45, rewardScale: 1.55 },
+  family: { id: 'familyBoss', name: 'Family Boss', mark: 'F', image: 'assets/icons/familly.png', color: '#38bdf8', every: 10, radius: 2.05, attack: 2.15, hpScale: 2.15, rewardScale: 2.35 }
 }
 
 const enemyTypeOrder = ['grunt', 'runner', 'brute', 'shade']
+const soldierIconPath = 'assets/icons/soldier_barracks.png'
+const iconImages = {}
 
 // 全局游戏状态：只放会影响玩法流程或结算的数据，绘制布局单独放在 layout。
 const state = {
@@ -51,6 +58,7 @@ const state = {
   gameSpeed: 1,
   freezeCooldown: 0,
   freezeTimer: 0,
+  stasisTimer: 0,
   powerCooldown: 0,
   powerTimer: 0,
   selectedTowerType: 'arrow',
@@ -72,8 +80,41 @@ let soldiers = []
 let effects = []
 let spawnQueue = []
 let spawnTimer = 0
+let bossCurtain = null
 let lastTime = Date.now()
 let layout = {}
+
+// 预加载 PNG 图标；加载失败时保留 Canvas fallback，避免资源问题导致单位不可见。
+function preloadIconImages() {
+  const paths = []
+  Object.keys(towerTypes).forEach((key) => paths.push(towerTypes[key].image))
+  Object.keys(enemyTypes).forEach((key) => paths.push(enemyTypes[key].image))
+  Object.keys(specialBossTypes).forEach((key) => paths.push(specialBossTypes[key].image))
+  paths.push(soldierIconPath)
+  paths.forEach((path) => {
+    if (!path || iconImages[path]) return
+    const image = wx.createImage()
+    image.loaded = false
+    image.failed = false
+    image.onload = () => {
+      image.loaded = true
+    }
+    image.onerror = () => {
+      image.failed = true
+    }
+    image.src = path
+    iconImages[path] = image
+  })
+}
+
+function getIconImage(path) {
+  const image = iconImages[path]
+  return image && image.loaded && !image.failed ? image : null
+}
+
+function drawCenteredImage(image, x, y, w, h) {
+  ctx.drawImage(image, x - w / 2, y - h / 2, w, h)
+}
 
 // 重置完整局面。随机地图会重建，结算统计也从零开始。
 function resetGame() {
@@ -86,6 +127,7 @@ function resetGame() {
     gameSpeed: 1,
     freezeCooldown: 0,
     freezeTimer: 0,
+    stasisTimer: 0,
     powerCooldown: 0,
     powerTimer: 0,
     selectedTowerType: 'arrow',
@@ -105,6 +147,7 @@ function resetGame() {
   effects = []
   spawnQueue = []
   spawnTimer = 0
+  bossCurtain = null
   map = createMap()
   updateLayout()
 }
@@ -439,21 +482,13 @@ function startWave() {
   const earlyReward = estimateEarlyWaveReward(nextWave)
   const nextQueue = Array.from({ length: count }, (_, index) => createEnemyConfig(nextWave, index, hpMultiplier))
   if (nextWave % 3 === 0) {
-    const bossBase = Math.round((260 + nextWave * 90) * hpMultiplier)
-    const boss = {
-      type: 'boss',
-      name: enemyTypes.boss.name,
-      color: enemyTypes.boss.color,
-      mark: enemyTypes.boss.mark,
-      hp: bossBase,
-      speed: 0.026 + nextWave * 0.0012,
-      reward: 42 + nextWave * 5,
-      boss: true,
-      radiusScale: enemyTypes.boss.radius,
-      attackScale: enemyTypes.boss.attack,
-      blockImmune: false
-    }
-    nextQueue.splice(Math.max(1, Math.floor(count * 0.45)), 0, boss)
+    nextQueue.splice(Math.max(1, Math.floor(count * 0.45)), 0, createBossConfig(nextWave, 'normal', hpMultiplier))
+  }
+  if (nextWave % specialBossTypes.anna.every === 0) {
+    nextQueue.splice(Math.max(1, Math.floor(count * 0.58)), 0, createBossConfig(nextWave, 'anna', hpMultiplier))
+  }
+  if (nextWave % specialBossTypes.family.every === 0) {
+    nextQueue.splice(Math.max(1, Math.floor(count * 0.72)), 0, createBossConfig(nextWave, 'family', hpMultiplier))
   }
   spawnQueue = spawnQueue.concat(nextQueue)
   if (!state.running || queuedBefore === 0) spawnTimer = 0
@@ -464,10 +499,65 @@ function startWave() {
     state.earnedGold += earlyReward.gold
   }
   const rewardText = earlyReward.gold > 0 ? `，提前 ${earlyReward.seconds}s 奖励 ${earlyReward.gold} 金` : ''
-  state.message = nextWave % 3 === 0
+  state.message = nextQueue.some((enemy) => enemy.boss)
     ? `第 ${nextWave} 轮 Boss 加入战场${rewardText}`
     : `第 ${nextWave} 轮敌人加入战场${rewardText}`
   buildButtons()
+}
+
+function createBossConfig(wave, kind, hpMultiplier) {
+  if (kind === 'anna') {
+    const type = specialBossTypes.anna
+    return {
+      type: type.id,
+      name: type.name,
+      image: type.image,
+      color: type.color,
+      mark: type.mark,
+      hp: Math.round((340 + wave * 112) * hpMultiplier * type.hpScale),
+      speed: 0.023 + wave * 0.0009,
+      reward: Math.round((54 + wave * 6) * type.rewardScale),
+      boss: true,
+      bossKind: 'anna',
+      radiusScale: type.radius,
+      attackScale: type.attack,
+      blockImmune: false
+    }
+  }
+  if (kind === 'family') {
+    const type = specialBossTypes.family
+    return {
+      type: type.id,
+      name: type.name,
+      image: type.image,
+      color: type.color,
+      mark: type.mark,
+      hp: Math.round((430 + wave * 135) * hpMultiplier * type.hpScale),
+      speed: 0.02 + wave * 0.00075,
+      reward: Math.round((70 + wave * 8) * type.rewardScale),
+      boss: true,
+      bossKind: 'family',
+      radiusScale: type.radius,
+      attackScale: type.attack,
+      blockImmune: false
+    }
+  }
+  const type = enemyTypes.boss
+  return {
+    type: 'boss',
+    name: type.name,
+    image: type.image,
+    color: type.color,
+    mark: type.mark,
+    hp: Math.round((260 + wave * 90) * hpMultiplier),
+    speed: 0.026 + wave * 0.0012,
+    reward: 42 + wave * 5,
+    boss: true,
+    bossKind: 'normal',
+    radiusScale: type.radius,
+    attackScale: type.attack,
+    blockImmune: false
+  }
 }
 
 // 提前奖励按“剩余刷怪时间”和“场上敌人预计走完全程时间”取较大值估算，并设置上限。
@@ -513,6 +603,7 @@ function createEnemyConfig(wave, index, hpMultiplier) {
   return {
     type: type.id,
     name: type.name,
+    image: type.image,
     color: type.color,
     mark: type.mark,
     hp: Math.round(baseHp * hpMultiplier * type.hp),
@@ -705,8 +796,13 @@ function castPowerSkill() {
 function updateSkills(dt) {
   state.freezeCooldown = Math.max(0, state.freezeCooldown - dt)
   state.freezeTimer = Math.max(0, state.freezeTimer - dt)
+  state.stasisTimer = Math.max(0, state.stasisTimer - dt)
   state.powerCooldown = Math.max(0, state.powerCooldown - dt)
   state.powerTimer = Math.max(0, state.powerTimer - dt)
+}
+
+function isUnitStasisActive() {
+  return state.stasisTimer > 0
 }
 
 function attackMultiplier() {
@@ -724,9 +820,14 @@ function removeTowerSupport(tower) {
   }
 }
 
-// 主更新循环：技能、刷怪、敌人、士兵、塔、弹体、特效按依赖顺序推进。
+// 主更新循环：Family Boss 的冻结只暂停防守单位，敌人和已飞出的弹体继续推进。
 function update(dt) {
   if (state.gameOver) {
+    updateEffects(dt)
+    return
+  }
+  if (bossCurtain) {
+    updateBossCurtain(dt)
     updateEffects(dt)
     return
   }
@@ -737,18 +838,15 @@ function update(dt) {
     updateEffects(dt)
     return
   }
-  updateSoldiers(dt)
-  updateTowers(dt)
+  if (!isUnitStasisActive()) {
+    updateSoldiers(dt)
+    updateTowers(dt)
+  }
   updateProjectiles(dt)
   updateEffects(dt)
 
   if (state.running && spawnQueue.length === 0 && enemies.length === 0) {
-    const bonus = 24 + state.wave * 4
-    state.running = false
-    state.gold += bonus
-    state.earnedGold += bonus
-    state.message = `第 ${state.wave} 轮清理完毕`
-    buildButtons()
+    completeWaveIfCleared()
   }
 }
 
@@ -762,6 +860,7 @@ function updateSpawns(dt) {
     id: `${Date.now()}-${Math.random()}`,
     type: config.type,
     name: config.name,
+    image: config.image,
     color: config.color,
     mark: config.mark,
     x: start.x,
@@ -771,6 +870,10 @@ function updateSpawns(dt) {
     speed: config.speed,
     reward: config.reward,
     boss: !!config.boss,
+    bossKind: config.bossKind || null,
+    specialTriggered: false,
+    specialActionTimer: 0,
+    pendingHealRatio: 0,
     radiusScale: config.radiusScale || 1,
     attackScale: config.attackScale || 1,
     blockImmune: !!config.blockImmune,
@@ -778,6 +881,8 @@ function updateSpawns(dt) {
     slowTimer: 0,
     slowFactor: 1,
     blockedBy: null,
+    moveAngle: 0,
+    movePulse: 0,
     attackTimer: 0,
     attackDamage: Math.round(((config.boss ? 12 : 5) + Math.floor(state.wave * (config.boss ? 2.4 : 1.6))) * (config.attackScale || 1)),
     hurtTimer: 0,
@@ -795,18 +900,19 @@ function updateEnemies(dt) {
     if (enemy.hp <= 0) {
       enemies.splice(i, 1)
       releaseEnemyBlock(enemy)
+      if (startBossCurtain(enemy)) continue
       createDeathBurst(enemy)
-      state.gold += enemy.reward
-      state.earnedGold += enemy.reward
-      state.kills += 1
+      settleEnemyKill(enemy)
       continue
     }
 
     enemy.age += dt
     enemy.hurtTimer = Math.max(0, enemy.hurtTimer - dt)
+    updateBossSpecialAction(enemy, dt)
     enemy.freezeTimer = Math.max(0, (enemy.freezeTimer || 0) - dt)
     if (enemy.slowTimer > 0) enemy.slowTimer -= dt
     else enemy.slowFactor = 1
+    if (enemy.specialActionTimer > 0) continue
     if (enemy.freezeTimer > 0 || state.freezeTimer > 0) continue
     if (isEnemyBlocked(enemy)) {
       updateBlockedEnemyAttack(enemy, dt)
@@ -827,6 +933,7 @@ function updateEnemies(dt) {
 
     const dist = distance(enemy, target)
     const step = enemy.speed * enemy.slowFactor * dt
+    enemy.moveAngle = Math.atan2(target.y - enemy.y, target.x - enemy.x)
     if (dist <= step) {
       enemy.x = target.x
       enemy.y = target.y
@@ -834,6 +941,7 @@ function updateEnemies(dt) {
     } else {
       enemy.x += ((target.x - enemy.x) / dist) * step
       enemy.y += ((target.y - enemy.y) / dist) * step
+      enemy.movePulse += dt * enemy.speed * 0.16
     }
   }
 }
@@ -854,8 +962,9 @@ function updateTowers(dt) {
     if (!target) return
 
     tower.fireTimer = tower.cooldown
-    tower.recoilTimer = 140
+    tower.recoilTimer = tower.type === 'rocket' ? 210 : 150
     const type = towerTypes[tower.type]
+    const angle = Math.atan2(target.y - tower.y, target.x - tower.x)
     projectiles.push({
       x: tower.x,
       y: tower.y,
@@ -868,10 +977,24 @@ function updateTowers(dt) {
       splash: type.splash ? type.splash * layout.cell : 0,
       slow: type.slow || 0,
       color: type.color,
-      angle: Math.atan2(target.y - tower.y, target.x - tower.x),
+      angle,
       age: 0
     })
-    effects.push({ type: tower.type === 'magic' ? 'beam' : 'muzzle', x: tower.x, y: tower.y, toX: target.x, toY: target.y, angle: Math.atan2(target.y - tower.y, target.x - tower.x), age: 0, life: 140, color: type.color })
+    const muzzleDistance = layout.cell * (tower.type === 'rocket' ? 0.8 : 0.55)
+    effects.push({
+      type: tower.type === 'magic' ? 'beam' : 'muzzle',
+      x: tower.x + Math.cos(angle) * muzzleDistance,
+      y: tower.y + Math.sin(angle) * muzzleDistance,
+      fromX: tower.x,
+      fromY: tower.y,
+      toX: target.x,
+      toY: target.y,
+      angle,
+      age: 0,
+      life: tower.type === 'magic' ? 190 : 170,
+      radius: layout.cell * (tower.type === 'rocket' ? 0.32 : 0.22),
+      color: type.color
+    })
   })
 }
 
@@ -907,6 +1030,7 @@ function spawnBarracksSoldier(tower) {
     guardRadius: stats.guardRadius,
     blockDistance: stats.blockDistance,
     moveSpeed: stats.moveSpeed,
+    spawnTimer: 360,
     attackTimer: 0,
     attackCooldown: stats.attackCooldown,
     blockingEnemyId: null
@@ -922,6 +1046,7 @@ function updateSoldiers(dt) {
       continue
     }
     soldier.attackTimer -= dt
+    soldier.spawnTimer = Math.max(0, (soldier.spawnTimer || 0) - dt)
     soldier.swingTimer = Math.max(0, (soldier.swingTimer || 0) - dt)
     const target = resolveSoldierTarget(soldier)
     if (target) {
@@ -972,6 +1097,22 @@ function hitEnemy(p) {
       if (distance(enemy, p.target) <= p.splash) damageEnemy(enemy, p.damage, p.color)
     })
     effects.push({ type: 'explosion', x: p.target.x, y: p.target.y, age: 0, life: 360, radius: p.splash, color: p.color })
+    effects.push({ type: 'shockwave', x: p.target.x, y: p.target.y, age: 0, life: 420, radius: p.splash * 0.25, endRadius: p.splash * 1.15, color: '#fed7aa' })
+    for (let i = 0; i < 10; i += 1) {
+      const angle = Math.random() * TWO_PI
+      const speed = 0.035 + Math.random() * 0.08
+      effects.push({
+        type: 'spark',
+        x: p.target.x,
+        y: p.target.y,
+        vx: Math.cos(angle) * speed,
+        vy: Math.sin(angle) * speed,
+        age: 0,
+        life: 260 + Math.random() * 220,
+        radius: layout.cell * (0.04 + Math.random() * 0.06),
+        color: Math.random() > 0.45 ? '#fb923c' : '#fde68a'
+      })
+    }
   } else {
     damageEnemy(p.target, p.damage, p.color)
   }
@@ -983,9 +1124,58 @@ function hitEnemy(p) {
 }
 
 function damageEnemy(enemy, damage, color) {
+  if (enemy.specialActionTimer > 0) return
   enemy.hp -= damage
   enemy.hurtTimer = 140
   effects.push({ type: 'hit', x: enemy.x, y: enemy.y, age: 0, life: 220, radius: layout.cell * 0.2, color })
+  triggerBossSpecialIfNeeded(enemy)
+}
+
+function triggerBossSpecialIfNeeded(enemy) {
+  if (!enemy.bossKind || enemy.bossKind === 'normal' || enemy.specialTriggered) return
+  if (enemy.hp > enemy.maxHp * 0.5) return
+
+  enemy.specialTriggered = true
+  releaseEnemyBlock(enemy)
+  enemy.blockedBy = null
+
+  if (enemy.bossKind === 'anna') {
+    enemy.hp = Math.max(1, enemy.hp)
+    enemy.specialActionTimer = 2600
+    enemy.pendingHealRatio = 0.78
+    enemy.hurtTimer = 0
+    state.message = 'Anna Boss 原地大哭，马上回血'
+    effects.push({ type: 'cry', x: enemy.x, y: enemy.y, age: 0, life: 2600, radius: layout.cell * 1.15, color: enemy.color })
+    createRingEffect(enemy.x, enemy.y, '#f9a8d4', layout.cell * 1.25)
+    return
+  }
+
+  if (enemy.bossKind === 'family') {
+    enemy.hp = enemy.maxHp
+    state.stasisTimer = 10000 * state.gameSpeed
+    state.message = 'Family Boss 释放全屏冻结，塔和士兵暂停 10 秒'
+    effects.push({
+      type: 'screen',
+      x: layout.boardW / 2,
+      y: layout.boardH / 2,
+      age: 0,
+      life: 900,
+      radius: Math.max(layout.boardW, layout.boardH),
+      color: '#7dd3fc'
+    })
+    effects.push({ type: 'shockwave', x: enemy.x, y: enemy.y, age: 0, life: 900, radius: layout.cell * 0.4, endRadius: layout.cell * 4.2, color: '#bae6fd' })
+  }
+}
+
+function updateBossSpecialAction(enemy, dt) {
+  if (!enemy.specialActionTimer) return
+  enemy.specialActionTimer = Math.max(0, enemy.specialActionTimer - dt)
+  if (enemy.specialActionTimer > 0 || !enemy.pendingHealRatio) return
+  enemy.hp = Math.max(enemy.hp, Math.round(enemy.maxHp * enemy.pendingHealRatio))
+  enemy.pendingHealRatio = 0
+  enemy.hurtTimer = 0
+  state.message = 'Anna Boss 哭完后恢复了大量血量'
+  effects.push({ type: 'heal', x: enemy.x, y: enemy.y, age: 0, life: 620, radius: layout.cell * 0.55, endRadius: layout.cell * 1.75, color: '#86efac' })
 }
 
 function updateEffects(dt) {
@@ -998,6 +1188,60 @@ function updateEffects(dt) {
     }
     if (e.age >= e.life) effects.splice(i, 1)
   }
+}
+
+function startBossCurtain(enemy) {
+  if (enemy.bossKind !== 'anna' && enemy.bossKind !== 'family') return false
+  const speedScale = Math.max(1, state.gameSpeed)
+  const message = enemy.bossKind === 'anna'
+    ? '啊，到时间了，我该回去做作业了'
+    : '全家都要健健康康！'
+  bossCurtain = {
+    kind: enemy.bossKind,
+    image: enemy.image,
+    color: enemy.color || '#fbbf24',
+    text: message,
+    x: enemy.x,
+    y: enemy.y,
+    age: 0,
+    growTime: 1100 * speedScale,
+    marqueeTime: 4300 * speedScale,
+    fadeTime: 650 * speedScale,
+    reward: enemy.reward,
+    enemy
+  }
+  projectiles = projectiles.filter((projectile) => projectile.target !== enemy)
+  state.message = enemy.bossKind === 'anna' ? 'Anna Boss 退场演出' : 'Family Boss 退场演出'
+  return true
+}
+
+function updateBossCurtain(dt) {
+  if (!bossCurtain) return
+  bossCurtain.age += dt
+  const total = bossCurtain.growTime + bossCurtain.marqueeTime + bossCurtain.fadeTime
+  if (bossCurtain.age < total) return
+
+  const enemy = bossCurtain.enemy
+  createDeathBurst({ ...enemy, x: layout.boardW / 2, y: layout.boardH / 2 })
+  settleEnemyKill(enemy)
+  bossCurtain = null
+  completeWaveIfCleared()
+}
+
+function settleEnemyKill(enemy) {
+  state.gold += enemy.reward
+  state.earnedGold += enemy.reward
+  state.kills += 1
+}
+
+function completeWaveIfCleared() {
+  if (!state.running || spawnQueue.length > 0 || enemies.length > 0 || bossCurtain) return
+  const bonus = 24 + state.wave * 4
+  state.running = false
+  state.gold += bonus
+  state.earnedGold += bonus
+  state.message = `第 ${state.wave} 轮清理完毕`
+  buildButtons()
 }
 
 // 兵营士兵的生命、巡逻半径、攻击间隔都随塔等级增长。
@@ -1060,6 +1304,16 @@ function removeDeadSoldier(soldier, index) {
     tower.respawnTimers = tower.respawnTimers || []
     tower.respawnTimers.push(stats.respawnDelay)
   }
+  effects.push({
+    type: 'soldierDeath',
+    x: soldier.x,
+    y: soldier.y,
+    age: 0,
+    life: 360,
+    radius: layout.cell * 0.34,
+    image: soldierIconPath,
+    color: '#86efac'
+  })
   createRingEffect(soldier.x, soldier.y, '#fb7185', layout.cell * 0.42)
 }
 
@@ -1195,10 +1449,22 @@ function createRingEffect(x, y, color, endRadius) {
 }
 
 function createDeathBurst(enemy) {
-  effects.push({ type: 'death', x: enemy.x, y: enemy.y, age: 0, life: 420, radius: layout.cell * 0.45, color: '#fca5a5' })
+  const radiusScale = enemy.radiusScale || 1
+  effects.push({
+    type: 'enemyDeath',
+    x: enemy.x,
+    y: enemy.y,
+    age: 0,
+    life: 460,
+    radius: layout.cell * (enemy.boss ? 0.82 : 0.48) * radiusScale,
+    color: enemy.color || '#fca5a5',
+    image: enemy.image,
+    boss: enemy.boss
+  })
+  effects.push({ type: 'death', x: enemy.x, y: enemy.y, age: 0, life: 420, radius: layout.cell * 0.45 * radiusScale, color: enemy.color || '#fca5a5' })
   for (let i = 0; i < 8; i += 1) {
     const angle = (TWO_PI / 8) * i
-    effects.push({ type: 'spark', x: enemy.x, y: enemy.y, vx: Math.cos(angle) * 0.05, vy: Math.sin(angle) * 0.05, age: 0, life: 420, radius: layout.cell * 0.08, color: '#fca5a5' })
+    effects.push({ type: 'spark', x: enemy.x, y: enemy.y, vx: Math.cos(angle) * 0.05, vy: Math.sin(angle) * 0.05, age: 0, life: 420, radius: layout.cell * 0.08, color: enemy.color || '#fca5a5' })
   }
 }
 
@@ -1213,6 +1479,8 @@ function draw() {
   ctx.translate(layout.boardX, layout.boardY)
   drawGrid()
   drawPath()
+  drawPathMarkers()
+  drawSkillAuras('under')
   drawSelectedRange()
   drawPendingBuildCell()
   drawEffects('under')
@@ -1221,6 +1489,8 @@ function draw() {
   drawEnemies()
   drawProjectiles()
   drawEffects('over')
+  drawSkillAuras('over')
+  drawBossCurtain()
   ctx.restore()
   drawBuildMenu()
   drawControls()
@@ -1232,7 +1502,7 @@ function drawHud() {
     ['金币', state.gold],
     ['生命', state.lives],
     ['轮次', state.wave],
-    ['状态', state.gameOver ? '结束' : state.running ? '战斗中' : '待命']
+    ['状态', state.gameOver ? '结束' : bossCurtain ? '演出' : state.stasisTimer > 0 ? '冻结' : state.running ? '战斗中' : '待命']
   ]
   const gap = 8
   const w = (W - 20 - gap * 3) / 4
@@ -1266,14 +1536,219 @@ function drawGrid() {
 
 function drawPath() {
   ctx.strokeStyle = '#d8b56d'
-  ctx.lineWidth = Math.max(5, layout.cell * 0.22)
+  ctx.lineWidth = Math.max(7, layout.cell * 0.34)
   ctx.lineCap = 'round'
+  ctx.lineJoin = 'round'
   ctx.beginPath()
   map.waypoints.forEach((point, i) => {
     if (i === 0) ctx.moveTo(point.x, point.y)
     else ctx.lineTo(point.x, point.y)
   })
   ctx.stroke()
+  ctx.strokeStyle = '#f4d891'
+  ctx.lineWidth = Math.max(3, layout.cell * 0.13)
+  ctx.beginPath()
+  map.waypoints.forEach((point, i) => {
+    if (i === 0) ctx.moveTo(point.x, point.y)
+    else ctx.lineTo(point.x, point.y)
+  })
+  ctx.stroke()
+}
+
+function drawPathMarkers() {
+  if (!map.waypoints || map.waypoints.length < 2) return
+  drawPathMarker(map.waypoints[0], '入口', '#22c55e')
+  drawPathMarker(map.waypoints[map.waypoints.length - 1], '出口', '#ef4444')
+}
+
+function drawPathMarker(point, label, color) {
+  const w = Math.max(30, layout.cell * 1.9)
+  const h = Math.max(18, layout.cell * 0.86)
+  const x = Math.max(2, Math.min(layout.boardW - w - 2, point.x - w / 2))
+  const y = Math.max(2, Math.min(layout.boardH - h - 2, point.y - h / 2))
+  ctx.save()
+  roundRect(x, y, w, h, 5, 'rgba(15, 23, 42, 0.82)', color)
+  ctx.fillStyle = '#ffffff'
+  ctx.font = `bold ${Math.max(10, Math.floor(layout.cell * 0.42))}px sans-serif`
+  ctx.textAlign = 'center'
+  ctx.textBaseline = 'middle'
+  ctx.fillText(label, x + w / 2, y + h / 2 + 0.5)
+  ctx.restore()
+}
+
+function drawBossCurtain() {
+  if (!bossCurtain) return
+  const growRatio = Math.min(1, bossCurtain.age / bossCurtain.growTime)
+  const fadeRatio = bossCurtain.age > bossCurtain.growTime + bossCurtain.marqueeTime
+    ? Math.min(1, (bossCurtain.age - bossCurtain.growTime - bossCurtain.marqueeTime) / bossCurtain.fadeTime)
+    : 0
+  const ease = 1 - Math.pow(1 - growRatio, 3)
+  const centerX = layout.boardW / 2
+  const centerY = layout.boardH / 2
+  const currentX = bossCurtain.x + (centerX - bossCurtain.x) * ease
+  const currentY = bossCurtain.y + (centerY - bossCurtain.y) * ease
+  const maxW = layout.boardW * 0.8
+  const maxH = layout.boardH * 0.8
+  const startSize = layout.cell * 1.8
+  const target = Math.min(maxW, maxH)
+  const size = startSize + (target - startSize) * ease
+  const alpha = 1 - fadeRatio
+  const image = getIconImage(bossCurtain.image)
+
+  ctx.save()
+  ctx.globalAlpha = alpha
+  ctx.fillStyle = 'rgba(2, 6, 23, 0.52)'
+  ctx.fillRect(0, 0, layout.boardW, layout.boardH)
+  ctx.shadowColor = bossCurtain.color
+  ctx.shadowBlur = layout.cell * 0.8
+  if (image) {
+    const aspect = image.width && image.height ? image.width / image.height : 1
+    const w = aspect >= 1 ? size : size * aspect
+    const h = aspect >= 1 ? size / aspect : size
+    drawCenteredImage(image, currentX, currentY, w, h)
+  } else {
+    ctx.fillStyle = bossCurtain.color
+    ctx.beginPath()
+    ctx.arc(currentX, currentY, size / 2, 0, TWO_PI)
+    ctx.fill()
+  }
+  ctx.shadowBlur = 0
+  drawCurtainMarquee(bossCurtain, alpha)
+  ctx.restore()
+}
+
+function drawCurtainMarquee(curtain, alpha) {
+  const textY = layout.boardH * 0.5
+  const boxH = Math.max(34, layout.cell * 1.45)
+  const boxY = Math.max(8, Math.min(layout.boardH - boxH - 8, textY - boxH / 2))
+  const fontSize = Math.max(18, Math.floor(layout.cell * 0.8))
+  ctx.save()
+  ctx.globalAlpha = alpha
+  ctx.fillStyle = 'rgba(15, 23, 42, 0.72)'
+  roundRect(layout.cell, boxY, layout.boardW - layout.cell * 2, boxH, 8, 'rgba(15, 23, 42, 0.72)', curtain.color)
+  ctx.beginPath()
+  ctx.rect(layout.cell * 1.2, boxY, layout.boardW - layout.cell * 2.4, boxH)
+  ctx.clip()
+  ctx.font = `bold ${fontSize}px sans-serif`
+  ctx.textAlign = 'left'
+  ctx.textBaseline = 'middle'
+  const textWidth = ctx.measureText(curtain.text).width
+  const marqueeStart = curtain.growTime * 0.72
+  const marqueeSpan = Math.max(1, curtain.marqueeTime + curtain.growTime * 0.28)
+  const ratio = Math.max(0, Math.min(1, (curtain.age - marqueeStart) / marqueeSpan))
+  const x = layout.boardW + layout.cell - ratio * (layout.boardW + textWidth + layout.cell * 2)
+  ctx.lineWidth = Math.max(3, layout.cell * 0.12)
+  ctx.strokeStyle = 'rgba(15, 23, 42, 0.92)'
+  ctx.strokeText(curtain.text, x, boxY + boxH / 2 + 1)
+  ctx.fillStyle = '#fff7ed'
+  ctx.fillText(curtain.text, x, boxY + boxH / 2 + 1)
+  ctx.restore()
+}
+
+function drawSkillAuras(layer) {
+  const freezeActive = state.freezeTimer > 0 || state.stasisTimer > 0
+  const powerActive = state.powerTimer > 0
+  if (layer === 'over' && freezeActive) drawFrostOverlay()
+  if (layer === 'over' && powerActive) drawPowerUnitOverlay()
+}
+
+function drawFrostOverlay() {
+  const time = Date.now() / 1000
+  ctx.save()
+  ctx.fillStyle = 'rgba(125, 211, 252, 0.16)'
+  ctx.fillRect(0, 0, layout.boardW, layout.boardH)
+  ctx.strokeStyle = 'rgba(224, 242, 254, 0.34)'
+  ctx.lineWidth = Math.max(1, layout.cell * 0.04)
+  for (let i = 0; i < 34; i += 1) {
+    const x = (i * 47 + time * 18) % (layout.boardW + layout.cell) - layout.cell * 0.5
+    const y = (i * 83 + Math.sin(time + i) * 26 + time * 22) % (layout.boardH + layout.cell) - layout.cell * 0.5
+    const r = layout.cell * (0.08 + (i % 4) * 0.025)
+    ctx.beginPath()
+    for (let p = 0; p < 6; p += 1) {
+      const a = (TWO_PI / 6) * p + time * 0.35
+      ctx.moveTo(x, y)
+      ctx.lineTo(x + Math.cos(a) * r, y + Math.sin(a) * r)
+    }
+    ctx.stroke()
+  }
+  ctx.fillStyle = 'rgba(240, 249, 255, 0.14)'
+  for (let i = 0; i < 42; i += 1) {
+    const x = (i * 61 + time * 12) % layout.boardW
+    const y = (i * 37 + time * 30) % layout.boardH
+    ctx.beginPath()
+    ctx.arc(x, y, layout.cell * (0.035 + (i % 3) * 0.014), 0, TWO_PI)
+    ctx.fill()
+  }
+  ctx.restore()
+}
+
+function drawPowerUnitOverlay() {
+  const time = Date.now() / 1000
+  ctx.save()
+  towers.forEach((tower) => drawPowerPulse(tower.x, tower.y, layout.cell * 0.9, time))
+  soldiers.forEach((soldier) => drawPowerPulse(soldier.x, soldier.y, layout.cell * 0.45, time + 0.35))
+  ctx.restore()
+}
+
+function drawPowerPulse(x, y, radius, time) {
+  const pulse = 0.75 + Math.sin(time * 11) * 0.25
+  ctx.save()
+  ctx.shadowColor = '#fb923c'
+  ctx.shadowBlur = layout.cell * 0.55
+  for (let i = 0; i < 7; i += 1) {
+    const offset = ((i - 3) / 3) * radius * 0.78
+    const wave = Math.sin(time * 7 + i * 1.7)
+    const baseY = y + radius * 0.58
+    const flameH = radius * (0.92 + pulse * 0.32 + (i % 2) * 0.18)
+    const flameW = radius * (0.22 + (i % 3) * 0.035)
+    ctx.beginPath()
+    ctx.moveTo(x + offset - flameW, baseY)
+    ctx.quadraticCurveTo(
+      x + offset - flameW * 0.9 + wave * radius * 0.14,
+      baseY - flameH * 0.48,
+      x + offset + wave * radius * 0.22,
+      baseY - flameH
+    )
+    ctx.quadraticCurveTo(
+      x + offset + flameW * 1.1 + wave * radius * 0.08,
+      baseY - flameH * 0.42,
+      x + offset + flameW,
+      baseY
+    )
+    ctx.closePath()
+    ctx.fillStyle = 'rgba(239, 68, 68, 0.72)'
+    ctx.fill()
+    ctx.beginPath()
+    ctx.moveTo(x + offset - flameW * 0.48, baseY - radius * 0.04)
+    ctx.quadraticCurveTo(
+      x + offset + wave * radius * 0.12,
+      baseY - flameH * 0.36,
+      x + offset + wave * radius * 0.16,
+      baseY - flameH * 0.72
+    )
+    ctx.quadraticCurveTo(
+      x + offset + flameW * 0.48,
+      baseY - flameH * 0.28,
+      x + offset + flameW * 0.42,
+      baseY - radius * 0.04
+    )
+    ctx.closePath()
+    ctx.fillStyle = 'rgba(253, 186, 116, 0.86)'
+    ctx.fill()
+  }
+  ctx.fillStyle = `rgba(251, 146, 60, ${0.18 + pulse * 0.16})`
+  ctx.beginPath()
+  ctx.ellipse(x, y + radius * 0.25, radius * 0.88, radius * 0.54, 0, 0, TWO_PI)
+  ctx.fill()
+  ctx.fillStyle = 'rgba(254, 240, 138, 0.86)'
+  for (let i = 0; i < 5; i += 1) {
+    const sparkX = x + Math.sin(time * 6 + i * 2.1) * radius * 0.9
+    const sparkY = y - radius * (0.15 + ((time * 1.7 + i * 0.23) % 1) * 0.95)
+    ctx.beginPath()
+    ctx.arc(sparkX, sparkY, Math.max(1.1, layout.cell * 0.035), 0, TWO_PI)
+    ctx.fill()
+  }
+  ctx.restore()
 }
 
 function drawSelectedRange() {
@@ -1310,12 +1785,18 @@ function drawBuildMenu() {
   layout.buildButtons.forEach((button) => {
     const tower = towerTypes[button.id]
     const canAfford = state.gold >= tower.cost
+    const image = getIconImage(tower.image)
     roundRect(button.x, button.y, button.w, button.h, 6, canAfford ? '#1b2638' : '#334155', tower.color)
-    ctx.fillStyle = tower.color
-    ctx.font = `bold ${Math.max(14, Math.floor(button.h * 0.42))}px sans-serif`
     ctx.textAlign = 'center'
     ctx.textBaseline = 'middle'
-    ctx.fillText(tower.icon, button.x + button.w / 2, button.y + button.h * 0.34)
+    if (image) {
+      const size = Math.min(button.w * 0.5, button.h * 0.48)
+      drawCenteredImage(image, button.x + button.w / 2, button.y + button.h * 0.34, size, size)
+    } else {
+      ctx.fillStyle = tower.color
+      ctx.font = `bold ${Math.max(14, Math.floor(button.h * 0.42))}px sans-serif`
+      ctx.fillText(tower.icon, button.x + button.w / 2, button.y + button.h * 0.34)
+    }
     ctx.fillStyle = canAfford ? '#ffffff' : '#fecaca'
     ctx.font = `bold ${Math.max(10, Math.floor(button.h * 0.25))}px sans-serif`
     ctx.fillText(`${tower.cost}金`, button.x + button.w / 2, button.y + button.h * 0.72)
@@ -1326,6 +1807,7 @@ function drawBuildMenu() {
 function drawTowers() {
   towers.forEach((tower) => {
     const type = towerTypes[tower.type]
+    const image = getIconImage(type.image)
     const s = layout.cell * TOWER_SIZE
     const x = tower.col * layout.cell
     const y = tower.row * layout.cell
@@ -1340,21 +1822,28 @@ function drawTowers() {
     ctx.translate(tower.x, tower.y)
     ctx.scale(pulse, pulse)
     ctx.fillStyle = type.color
-    if (tower.type === 'arrow') drawArrowTower(s)
+    if (image) {
+      drawCenteredImage(image, 0, 0, s * 0.92, s * 0.92)
+    } else if (tower.type === 'arrow') drawArrowTower(s)
     else if (tower.type === 'rocket') drawRocketTower(s)
     else if (tower.type === 'barracks') drawBarracksTower(s)
     else drawMagicTower(s)
     ctx.restore()
 
-    ctx.fillStyle = 'rgba(15, 23, 42, 0.78)'
-    ctx.beginPath()
-    ctx.arc(tower.x, tower.y, layout.cell * 0.34, 0, TWO_PI)
-    ctx.fill()
-    ctx.fillStyle = '#ffffff'
-    ctx.font = `bold ${Math.max(8, Math.floor(layout.cell * 0.46))}px sans-serif`
     ctx.textAlign = 'center'
     ctx.textBaseline = 'middle'
-    ctx.fillText(type.icon, tower.x, tower.y)
+    if (!image) {
+      ctx.fillStyle = 'rgba(15, 23, 42, 0.78)'
+      ctx.beginPath()
+      ctx.arc(tower.x, tower.y, layout.cell * 0.34, 0, TWO_PI)
+      ctx.fill()
+      ctx.fillStyle = '#ffffff'
+      ctx.font = `bold ${Math.max(8, Math.floor(layout.cell * 0.46))}px sans-serif`
+      ctx.fillText(type.icon, tower.x, tower.y)
+    }
+    ctx.fillStyle = 'rgba(15, 23, 42, 0.88)'
+    ctx.fillRect(tower.x - layout.cell * 0.52, tower.y + layout.cell * 0.58, layout.cell * 1.04, layout.cell * 0.34)
+    ctx.fillStyle = '#ffffff'
     ctx.font = `bold ${Math.max(8, Math.floor(layout.cell * 0.3))}px sans-serif`
     ctx.fillText(`Lv${tower.level}`, tower.x, tower.y + layout.cell * 0.78)
   })
@@ -1416,6 +1905,10 @@ function drawMagicTower(s) {
 
 function drawSoldiers() {
   soldiers.forEach((soldier) => {
+    const image = getIconImage(soldierIconPath)
+    const spawnRatio = Math.min(1, 1 - (soldier.spawnTimer || 0) / 360)
+    const pop = soldier.spawnTimer > 0 ? 0.55 + spawnRatio * 0.55 : 1
+    const bob = Math.sin(Date.now() / 140 + soldier.pathIndex) * layout.cell * 0.025
     const blockedEnemy = enemies.find((enemy) => enemy.id === soldier.blockingEnemyId)
     if (blockedEnemy) {
       ctx.strokeStyle = 'rgba(187, 247, 208, 0.7)'
@@ -1424,34 +1917,106 @@ function drawSoldiers() {
       ctx.lineTo(blockedEnemy.x, blockedEnemy.y)
       ctx.stroke()
     }
-    ctx.fillStyle = '#86efac'
+    ctx.save()
+    ctx.globalAlpha = 0.24
+    ctx.fillStyle = '#020617'
     ctx.beginPath()
-    ctx.arc(soldier.x, soldier.y, layout.cell * 0.15, 0, TWO_PI)
+    ctx.ellipse(soldier.x, soldier.y + layout.cell * 0.31, layout.cell * 0.38 * pop, layout.cell * 0.12, 0, 0, TWO_PI)
     ctx.fill()
+    ctx.restore()
+    if (image) {
+      const size = layout.cell * 1.12 * pop
+      ctx.save()
+      ctx.translate(soldier.x, soldier.y + bob)
+      ctx.scale(pop, pop)
+      if (soldier.swingTimer > 0) ctx.rotate(Math.sin(soldier.swingTimer / 28) * 0.18)
+      drawCenteredImage(image, 0, 0, size / pop, size / pop)
+      ctx.restore()
+    } else {
+      ctx.fillStyle = '#86efac'
+      ctx.beginPath()
+      ctx.arc(soldier.x, soldier.y, layout.cell * 0.22 * pop, 0, TWO_PI)
+      ctx.fill()
+    }
+    if (soldier.spawnTimer > 0) {
+      ctx.save()
+      ctx.globalAlpha = 1 - spawnRatio
+      ctx.strokeStyle = '#bbf7d0'
+      ctx.lineWidth = Math.max(1, layout.cell * 0.06)
+      ctx.beginPath()
+      ctx.arc(soldier.x, soldier.y, layout.cell * (0.28 + spawnRatio * 0.46), 0, TWO_PI)
+      ctx.stroke()
+      ctx.restore()
+    }
     const hpRatio = Math.max(0, soldier.hp / soldier.maxHp)
-    const width = layout.cell * 0.48
+    const width = layout.cell * 0.68
     ctx.fillStyle = '#111827'
-    ctx.fillRect(soldier.x - width / 2, soldier.y - layout.cell * 0.32, width, 3)
+    ctx.fillRect(soldier.x - width / 2, soldier.y - layout.cell * 0.58, width, 3)
     ctx.fillStyle = '#86efac'
-    ctx.fillRect(soldier.x - width / 2, soldier.y - layout.cell * 0.32, width * hpRatio, 3)
+    ctx.fillRect(soldier.x - width / 2, soldier.y - layout.cell * 0.58, width * hpRatio, 3)
   })
 }
 
-// 敌人颜色和标记来自 enemyTypes；幽影兵额外画斜线，表示无视兵营阻挡。
+// 敌人优先绘制 PNG 图标；幽影兵额外画斜线，表示无视兵营阻挡。
 function drawEnemies() {
   enemies.forEach((enemy) => {
-    const bob = Math.sin(enemy.age / 120 + enemy.wobble) * layout.cell * 0.035
+    const stride = Math.sin((enemy.movePulse || 0) + enemy.wobble)
+    const bob = stride * layout.cell * 0.045
+    const crying = enemy.specialActionTimer > 0 && enemy.bossKind === 'anna'
+    const squash = enemy.blockedBy || crying || enemy.freezeTimer > 0 || state.freezeTimer > 0
+      ? 1
+      : 1 + Math.abs(stride) * 0.07
+    const lean = enemy.blockedBy ? 0 : Math.sin((enemy.movePulse || 0) * 0.5 + enemy.wobble) * 0.12
     const flash = enemy.hurtTimer > 0 && Math.floor(enemy.hurtTimer / 35) % 2 === 0
     const frozen = enemy.freezeTimer > 0 || state.freezeTimer > 0
-    const radius = (enemy.boss ? layout.cell * 0.24 : layout.cell * 0.22) * (enemy.radiusScale || 1)
+    const radius = (enemy.boss ? layout.cell * 0.36 : layout.cell * 0.34) * (enemy.radiusScale || 1)
     const bodyColor = enemy.color || '#f43f5e'
-    ctx.fillStyle = flash ? '#ffffff' : frozen ? '#7dd3fc' : enemy.slowTimer > 0 ? '#67e8f9' : bodyColor
+    const image = getIconImage(enemy.image)
+    ctx.save()
+    ctx.globalAlpha = 0.26
+    ctx.fillStyle = '#020617'
     ctx.beginPath()
-    ctx.arc(enemy.x, enemy.y + bob, radius, 0, TWO_PI)
+    ctx.ellipse(enemy.x, enemy.y + radius * 1.14, radius * 1.3, radius * 0.36, 0, 0, TWO_PI)
     ctx.fill()
-    ctx.strokeStyle = '#0f172a'
-    ctx.lineWidth = Math.max(1.2, layout.cell * 0.05)
-    ctx.stroke()
+    ctx.restore()
+    if (image) {
+      const size = radius * (enemy.boss ? 3.75 : 3.55)
+      ctx.save()
+      ctx.translate(enemy.x, enemy.y + bob)
+      ctx.rotate(lean)
+      ctx.scale(1 / squash, squash)
+      drawCenteredImage(image, 0, 0, size, size)
+      ctx.restore()
+      if (flash || frozen || enemy.slowTimer > 0 || crying) {
+        ctx.save()
+        ctx.globalAlpha = flash ? 0.36 : crying ? 0.22 : 0.28
+        ctx.fillStyle = flash ? '#ffffff' : crying ? '#f9a8d4' : '#7dd3fc'
+        ctx.beginPath()
+        ctx.arc(enemy.x, enemy.y + bob, radius * 1.28, 0, TWO_PI)
+        ctx.fill()
+        ctx.restore()
+      }
+    } else {
+      ctx.save()
+      ctx.translate(enemy.x, enemy.y + bob)
+      ctx.rotate(lean)
+      ctx.scale(1 / squash, squash)
+      ctx.fillStyle = flash ? '#ffffff' : crying ? '#f9a8d4' : frozen ? '#7dd3fc' : enemy.slowTimer > 0 ? '#67e8f9' : bodyColor
+      ctx.beginPath()
+      ctx.arc(0, 0, radius, 0, TWO_PI)
+      ctx.fill()
+      ctx.strokeStyle = '#0f172a'
+      ctx.lineWidth = Math.max(1.2, layout.cell * 0.05)
+      ctx.stroke()
+      if (enemy.mark) {
+        ctx.fillStyle = enemy.boss ? '#fef3c7' : '#111827'
+        ctx.font = `bold ${Math.max(7, Math.floor(radius * 0.9))}px sans-serif`
+        ctx.textAlign = 'center'
+        ctx.textBaseline = 'middle'
+        ctx.fillText(enemy.mark, 0, 0.5)
+      }
+      ctx.restore()
+    }
     if (enemy.boss) {
       ctx.strokeStyle = '#fbbf24'
       ctx.lineWidth = Math.max(2, layout.cell * 0.08)
@@ -1459,12 +2024,8 @@ function drawEnemies() {
       ctx.arc(enemy.x, enemy.y + bob, radius + layout.cell * 0.08, 0, TWO_PI)
       ctx.stroke()
     }
-    if (enemy.mark) {
-      ctx.fillStyle = enemy.boss ? '#fef3c7' : '#111827'
-      ctx.font = `bold ${Math.max(7, Math.floor(radius * 0.9))}px sans-serif`
-      ctx.textAlign = 'center'
-      ctx.textBaseline = 'middle'
-      ctx.fillText(enemy.mark, enemy.x, enemy.y + bob + 0.5)
+    if (crying) {
+      drawCryingBadge(enemy.x, enemy.y + bob, radius)
     }
     if (enemy.blockImmune) {
       ctx.strokeStyle = '#f5d0fe'
@@ -1480,17 +2041,52 @@ function drawEnemies() {
       ctx.arc(enemy.x, enemy.y + bob, radius + layout.cell * 0.08, 0, TWO_PI)
       ctx.stroke()
     }
-    const width = enemy.boss ? layout.cell * 0.95 : layout.cell * 0.58
+    const width = enemy.boss ? layout.cell * 1.18 : layout.cell * 0.78
     const hp = Math.max(0, enemy.hp / enemy.maxHp)
     ctx.fillStyle = '#111827'
-    ctx.fillRect(enemy.x - width / 2, enemy.y - layout.cell * 0.38, width, 4)
+    ctx.fillRect(enemy.x - width / 2, enemy.y - layout.cell * 0.58, width, 4)
     ctx.fillStyle = '#22c55e'
-    ctx.fillRect(enemy.x - width / 2, enemy.y - layout.cell * 0.38, width * hp, 4)
+    ctx.fillRect(enemy.x - width / 2, enemy.y - layout.cell * 0.58, width * hp, 4)
   })
+}
+
+function drawCryingBadge(x, y, radius) {
+  const time = Date.now() / 1000
+  ctx.save()
+  ctx.strokeStyle = '#60a5fa'
+  ctx.fillStyle = '#93c5fd'
+  ctx.lineWidth = Math.max(1.2, layout.cell * 0.055)
+  for (let i = 0; i < 4; i += 1) {
+    const dx = (i < 2 ? -1 : 1) * radius * (0.32 + (i % 2) * 0.18)
+    const drop = ((time * 1.9 + i * 0.27) % 1) * radius * 0.95
+    const tx = x + dx
+    const ty = y - radius * 0.26 + drop
+    ctx.beginPath()
+    ctx.ellipse(tx, ty, radius * 0.1, radius * 0.18, 0, 0, TWO_PI)
+    ctx.fill()
+  }
+  ctx.fillStyle = '#fef3c7'
+  ctx.font = `bold ${Math.max(9, Math.floor(layout.cell * 0.42))}px sans-serif`
+  ctx.textAlign = 'center'
+  ctx.textBaseline = 'middle'
+  ctx.fillText('哭', x, y - radius * 1.35)
+  ctx.restore()
 }
 
 function drawProjectiles() {
   projectiles.forEach((p) => {
+    if (p.type === 'rocket') {
+      ctx.save()
+      const tailX = p.x - Math.cos(p.angle) * layout.cell * 0.22
+      const tailY = p.y - Math.sin(p.angle) * layout.cell * 0.22
+      ctx.strokeStyle = 'rgba(253, 186, 116, 0.85)'
+      ctx.lineWidth = Math.max(2, layout.cell * 0.16)
+      ctx.beginPath()
+      ctx.moveTo(p.prevX, p.prevY)
+      ctx.lineTo(tailX, tailY)
+      ctx.stroke()
+      ctx.restore()
+    }
     ctx.strokeStyle = p.color
     ctx.lineWidth = p.type === 'rocket' ? Math.max(1.8, layout.cell * 0.12) : Math.max(1.2, layout.cell * 0.08)
     ctx.beginPath()
@@ -1501,6 +2097,12 @@ function drawProjectiles() {
     ctx.beginPath()
     ctx.arc(p.x, p.y, layout.cell * 0.12, 0, TWO_PI)
     ctx.fill()
+    if (p.type === 'rocket') {
+      ctx.fillStyle = '#fff7ed'
+      ctx.beginPath()
+      ctx.arc(p.x, p.y, layout.cell * 0.055, 0, TWO_PI)
+      ctx.fill()
+    }
   })
 }
 
@@ -1520,19 +2122,99 @@ function drawEffects(layer) {
       ctx.arc(e.x, e.y, radius, 0, TWO_PI)
       ctx.stroke()
     } else if (e.type === 'beam') {
+      ctx.lineWidth = Math.max(2, layout.cell * (0.13 - ratio * 0.06))
       ctx.beginPath()
-      ctx.moveTo(e.x, e.y)
+      ctx.moveTo(e.fromX || e.x, e.fromY || e.y)
       ctx.lineTo(e.toX, e.toY)
       ctx.stroke()
+    } else if (e.type === 'muzzle') {
+      const radius = e.radius * (1 + ratio * 1.35)
+      ctx.save()
+      ctx.translate(e.x, e.y)
+      ctx.rotate(e.angle)
+      ctx.fillStyle = '#fff7ed'
+      ctx.beginPath()
+      ctx.moveTo(radius * 1.4, 0)
+      ctx.lineTo(-radius * 0.45, -radius * 0.65)
+      ctx.lineTo(-radius * 0.1, 0)
+      ctx.lineTo(-radius * 0.45, radius * 0.65)
+      ctx.closePath()
+      ctx.fill()
+      ctx.strokeStyle = e.color
+      ctx.lineWidth = Math.max(1, layout.cell * 0.04)
+      ctx.stroke()
+      ctx.restore()
     } else if (e.type === 'screen') {
       ctx.fillStyle = e.color
       ctx.globalAlpha = alpha * 0.16
       ctx.fillRect(0, 0, layout.boardW, layout.boardH)
-    } else if (e.type === 'explosion' || e.type === 'death') {
+    } else if (e.type === 'enemyDeath' || e.type === 'soldierDeath') {
+      const image = getIconImage(e.image)
+      const scale = e.type === 'soldierDeath' ? 1 + ratio * 0.35 : 1 + ratio * 0.55
+      ctx.globalAlpha = alpha * alpha
+      ctx.translate(e.x, e.y - layout.cell * 0.18 * ratio)
+      ctx.rotate(ratio * (e.type === 'soldierDeath' ? -0.35 : 0.45))
+      if (image) {
+        drawCenteredImage(image, 0, 0, e.radius * 3.2 * scale, e.radius * 3.2 * scale)
+      } else {
+        ctx.beginPath()
+        ctx.arc(0, 0, e.radius * scale, 0, TWO_PI)
+        ctx.fill()
+      }
+    } else if (e.type === 'shockwave') {
+      const radius = e.radius + (e.endRadius - e.radius) * ratio
+      ctx.globalAlpha = alpha * 0.85
+      ctx.lineWidth = Math.max(2, layout.cell * (0.18 - ratio * 0.12))
+      ctx.beginPath()
+      ctx.arc(e.x, e.y, radius, 0, TWO_PI)
+      ctx.stroke()
+    } else if (e.type === 'cry') {
+      const radius = e.radius * (0.82 + Math.sin(e.age / 140) * 0.08)
+      ctx.globalAlpha = 0.42 + Math.sin(e.age / 120) * 0.14
+      ctx.lineWidth = Math.max(2, layout.cell * 0.08)
+      ctx.beginPath()
+      ctx.arc(e.x, e.y, radius, 0, TWO_PI)
+      ctx.stroke()
+      ctx.fillStyle = '#93c5fd'
+      for (let i = 0; i < 8; i += 1) {
+        const angle = (TWO_PI / 8) * i + e.age / 420
+        const tx = e.x + Math.cos(angle) * radius * 0.72
+        const ty = e.y + Math.sin(angle) * radius * 0.42 + (ratio * layout.cell * 0.28)
+        ctx.beginPath()
+        ctx.ellipse(tx, ty, layout.cell * 0.06, layout.cell * 0.12, 0, 0, TWO_PI)
+        ctx.fill()
+      }
+    } else if (e.type === 'heal') {
+      const radius = e.radius + (e.endRadius - e.radius) * ratio
+      ctx.globalAlpha = alpha * 0.78
+      ctx.lineWidth = Math.max(2, layout.cell * 0.08)
+      ctx.beginPath()
+      ctx.arc(e.x, e.y, radius, 0, TWO_PI)
+      ctx.stroke()
+      ctx.fillStyle = '#bbf7d0'
+      ctx.font = `bold ${Math.max(10, Math.floor(layout.cell * 0.5))}px sans-serif`
+      ctx.textAlign = 'center'
+      ctx.textBaseline = 'middle'
+      ctx.fillText('+HP', e.x, e.y - radius * 0.28)
+    } else if (e.type === 'explosion') {
+      const radius = e.radius * (0.28 + ratio * 0.9)
+      ctx.globalAlpha = alpha * 0.72
+      ctx.beginPath()
+      ctx.arc(e.x, e.y, radius, 0, TWO_PI)
+      ctx.fill()
+      ctx.fillStyle = '#fff7ed'
+      ctx.globalAlpha = alpha * 0.5
+      ctx.beginPath()
+      ctx.arc(e.x, e.y, radius * 0.42, 0, TWO_PI)
+      ctx.fill()
+    } else if (e.type === 'death') {
       ctx.beginPath()
       ctx.arc(e.x, e.y, e.radius * (0.25 + ratio), 0, TWO_PI)
       ctx.fill()
     } else if (e.type === 'spark') {
+      if (e.vx || e.vy) {
+        ctx.globalAlpha = alpha
+      }
       ctx.beginPath()
       ctx.arc(e.x, e.y, e.radius, 0, TWO_PI)
       ctx.fill()
@@ -1612,7 +2294,7 @@ function drawSkillButtons() {
   layout.skillButtons.forEach((button) => {
     const isFreeze = button.id === 'freeze'
     const cooldown = isFreeze ? state.freezeCooldown : state.powerCooldown
-    const active = isFreeze ? state.freezeTimer > 0 : state.powerTimer > 0
+    const active = isFreeze ? state.freezeTimer > 0 || state.stasisTimer > 0 : state.powerTimer > 0
     const disabled = state.gameOver || cooldown > 0
     const label = isFreeze ? '冻结全场' : '攻击+50%'
     const text = active ? '生效中' : cooldown > 0 ? `${Math.ceil(cooldown / 1000)}s` : label
@@ -1680,6 +2362,7 @@ function handleTouch(x, y) {
     if (layout.restartButton && hitRect(x, y, layout.restartButton)) resetGame()
     return
   }
+  if (bossCurtain) return
   const buildButton = layout.buildButtons.find((button) => hitRect(x, y, button))
   if (buildButton && state.pendingBuildCell) {
     tryBuildTower(state.pendingBuildCell.col, state.pendingBuildCell.row, buildButton.id)
@@ -1783,5 +2466,6 @@ wx.onShow(() => {
   lastTime = Date.now()
 })
 
+preloadIconImages()
 resetGame()
 loop()
