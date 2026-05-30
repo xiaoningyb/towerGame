@@ -48,6 +48,26 @@ const enemyTypeOrder = ['grunt', 'runner', 'brute', 'shade']
 const soldierIconPath = 'assets/icons/soldier_barracks.png'
 const iconImages = {}
 
+const towerAttackSounds = {
+  arrow: 'assets/sounds/towers/arrow_attack.wav',
+  rocket: 'assets/sounds/towers/rocket_attack.wav',
+  barracks: 'assets/sounds/towers/barracks_attack.wav',
+  magic: 'assets/sounds/towers/magic_attack.wav'
+}
+
+const enemyDeathSounds = {
+  grunt: 'assets/sounds/enemies/grunt_death.wav',
+  runner: 'assets/sounds/enemies/runner_death.wav',
+  brute: 'assets/sounds/enemies/brute_death.wav',
+  shade: 'assets/sounds/enemies/shade_death.wav',
+  boss: 'assets/sounds/enemies/boss_death.wav',
+  annaBoss: 'assets/sounds/enemies/annaBoss_death.wav',
+  familyBoss: 'assets/sounds/enemies/familyBoss_death.wav'
+}
+
+const soundEffects = {}
+const soundLastPlayedAt = {}
+
 // 全局游戏状态：只放会影响玩法流程或结算的数据，绘制布局单独放在 layout。
 const state = {
   gold: 160,
@@ -83,6 +103,7 @@ let spawnTimer = 0
 let bossCurtain = null
 let lastTime = Date.now()
 let layout = {}
+let rerollConfirmOpen = false
 
 // 预加载 PNG 图标；加载失败时保留 Canvas fallback，避免资源问题导致单位不可见。
 function preloadIconImages() {
@@ -110,6 +131,64 @@ function preloadIconImages() {
 function getIconImage(path) {
   const image = iconImages[path]
   return image && image.loaded && !image.failed ? image : null
+}
+
+function configureAudioPlayback() {
+  if (!wx.setInnerAudioOption) return
+  wx.setInnerAudioOption({
+    mixWithOther: true,
+    obeyMuteSwitch: false,
+    fail(err) {
+      console.warn('setInnerAudioOption failed', err)
+    }
+  })
+}
+
+function preloadSoundEffects() {
+  const paths = []
+  Object.keys(towerAttackSounds).forEach((key) => paths.push(towerAttackSounds[key]))
+  Object.keys(enemyDeathSounds).forEach((key) => paths.push(enemyDeathSounds[key]))
+  paths.forEach((path) => {
+    if (!path || soundEffects[path]) return
+    const audio = wx.createInnerAudioContext()
+    audio.src = path
+    audio.volume = 0.45
+    audio.obeyMuteSwitch = false
+    audio.onError((err) => {
+      console.warn(`sound failed: ${path}`, err)
+    })
+    soundEffects[path] = audio
+  })
+}
+
+function playSound(path, options) {
+  if (!path) return
+  const now = Date.now()
+  const minGap = options && options.minGap ? options.minGap : 45
+  if (soundLastPlayedAt[path] && now - soundLastPlayedAt[path] < minGap) return
+  soundLastPlayedAt[path] = now
+
+  const audio = soundEffects[path]
+  if (!audio) return
+  audio.volume = options && options.volume ? options.volume : 0.45
+  audio.stop()
+  audio.seek(0)
+  audio.play()
+}
+
+function playTowerAttackSound(type) {
+  playSound(towerAttackSounds[type], {
+    minGap: type === 'barracks' ? 80 : 55,
+    volume: type === 'rocket' ? 0.52 : 0.42
+  })
+}
+
+function playEnemyDeathSound(enemy) {
+  if (!enemy) return
+  playSound(enemyDeathSounds[enemy.type], {
+    minGap: enemy.boss ? 180 : 70,
+    volume: enemy.boss ? 0.58 : 0.46
+  })
 }
 
 function drawCenteredImage(image, x, y, w, h) {
@@ -634,20 +713,45 @@ function pickEnemyType(wave, index) {
   return enemyTypes.grunt
 }
 
-// 随机地图用于重开当前布局；战斗中不允许切图，避免路线和敌人状态断开。
+// 随机地图用于重开当前布局；已有进度时先确认，再完整重置局面。
 function rerollMap() {
-  if (state.running || state.gameOver) return
-  map = createMap()
-  towers = []
-  enemies = []
-  projectiles = []
-  soldiers = []
-  effects = []
-  spawnQueue = []
-  state.selectedTowerId = null
-  state.pendingBuildCell = null
-  state.message = '新地图已生成，金币和生命保留'
-  refreshMapMetrics()
+  if (state.gameOver) return
+  if (!hasGameProgress()) {
+    resetGame()
+    return
+  }
+  if (rerollConfirmOpen) return
+  rerollConfirmOpen = true
+  wx.showModal({
+    title: '重新随机游戏？',
+    content: '当前进度、金币、生命和已建塔都会重置。',
+    confirmText: '重置',
+    cancelText: '继续',
+    success(res) {
+      if (res.confirm) {
+        resetGame()
+      } else {
+        state.message = '已保留当前防线'
+      }
+    },
+    complete() {
+      rerollConfirmOpen = false
+    }
+  })
+}
+
+function hasGameProgress() {
+  return state.wave > 0 ||
+    state.gold !== 160 ||
+    state.lives !== 20 ||
+    state.kills > 0 ||
+    state.escaped > 0 ||
+    state.earnedGold > 0 ||
+    state.spentGold > 0 ||
+    state.towersBuilt > 0 ||
+    towers.length > 0 ||
+    enemies.length > 0 ||
+    spawnQueue.length > 0
 }
 
 // 建塔入口：所有塔占 2x2，必须先通过 canPlaceTower 检查道路和已有塔占用。
@@ -980,6 +1084,7 @@ function updateTowers(dt) {
       angle,
       age: 0
     })
+    playTowerAttackSound(tower.type)
     const muzzleDistance = layout.cell * (tower.type === 'rocket' ? 0.8 : 0.55)
     effects.push({
       type: tower.type === 'magic' ? 'beam' : 'muzzle',
@@ -1061,6 +1166,7 @@ function updateSoldiers(dt) {
     }
     if (!target || target.blockedBy !== soldier.id || soldier.attackTimer > 0) continue
     damageEnemy(target, Math.round(soldier.damage * attackMultiplier()), '#bbf7d0')
+    playTowerAttackSound('barracks')
     soldier.swingTimer = 180
     soldier.attackTimer = soldier.attackCooldown
     effects.push({ type: 'slash', x: target.x, y: target.y, age: 0, life: 180, color: '#bbf7d0', angle: Math.random() * Math.PI })
@@ -1449,6 +1555,7 @@ function createRingEffect(x, y, color, endRadius) {
 }
 
 function createDeathBurst(enemy) {
+  playEnemyDeathSound(enemy)
   const radiusScale = enemy.radiusScale || 1
   effects.push({
     type: 'enemyDeath',
@@ -2238,7 +2345,7 @@ function drawControls() {
     const disabled = button.id === 'speed'
       ? state.gameOver
       : button.id === 'map'
-        ? state.running || state.gameOver
+        ? state.gameOver
         : !canStartWave
     const fill = button.id === 'speed'
       ? state.gameSpeed === 2 ? '#7c3aed' : '#475569'
@@ -2466,6 +2573,8 @@ wx.onShow(() => {
   lastTime = Date.now()
 })
 
+configureAudioPlayback()
 preloadIconImages()
+preloadSoundEffects()
 resetGame()
 loop()

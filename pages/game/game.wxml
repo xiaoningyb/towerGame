@@ -44,7 +44,7 @@
     <button class="primary" bindtap="startWave" disabled="{{running || gameOver}}">
       开始第 {{wave + 1}} 轮
     </button>
-    <button class="secondary" bindtap="rerollMap" disabled="{{running || gameOver}}">
+    <button class="secondary" bindtap="rerollMap" disabled="{{gameOver}}">
       随机地图
     </button>
   </view>

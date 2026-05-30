@@ -77,6 +77,7 @@ Page({
   onReady() {
     this.ctx = wx.createCanvasContext('battlefield', this)
     this.lastTick = Date.now()
+    this.rerollConfirmOpen = false
     this.resetGame()
     this.measureCanvas()
   },
@@ -205,19 +206,45 @@ Page({
   },
 
   rerollMap() {
-    if (this.data.running) return
-    this.map = this.createMap()
-    this.towers = []
-    this.enemies = []
-    this.projectiles = []
-    this.soldiers = []
-    this.effects = []
-    this.spawnQueue = []
-    this.setData({
-      selectedTower: null,
-      message: '新地图已生成，金币和生命保留'
+    if (this.data.gameOver) return
+    if (!this.hasGameProgress()) {
+      this.resetGame()
+      this.draw()
+      return
+    }
+    if (this.rerollConfirmOpen) return
+    this.rerollConfirmOpen = true
+    wx.showModal({
+      title: '重新随机游戏？',
+      content: '当前进度、金币、生命和已建塔都会重置。',
+      confirmText: '重置',
+      cancelText: '继续',
+      success: (res) => {
+        if (res.confirm) {
+          this.resetGame()
+          this.draw()
+        } else {
+          this.setData({ message: '已保留当前防线' })
+        }
+      },
+      complete: () => {
+        this.rerollConfirmOpen = false
+      }
     })
-    this.draw()
+  },
+
+  hasGameProgress() {
+    return this.data.wave > 0 ||
+      this.data.gold !== 160 ||
+      this.data.lives !== 20 ||
+      this.data.kills > 0 ||
+      this.data.escaped > 0 ||
+      this.data.earnedGold > 0 ||
+      this.data.spentGold > 0 ||
+      this.data.towersBuilt > 0 ||
+      this.towers.length > 0 ||
+      this.enemies.length > 0 ||
+      this.spawnQueue.length > 0
   },
 
   chooseTower(event) {
